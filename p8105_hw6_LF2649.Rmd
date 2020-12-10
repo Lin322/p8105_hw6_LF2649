@@ -36,6 +36,12 @@ library(p8105.datasets)
 
 ### Problem 1
 
+* Create a city_state variable (e.g. “Baltimore, MD”), 
+* and a binary variable indicating whether the homicide is solved. 
+* Omit cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. 
+* For this problem, limit your analysis those for whom victim_race is white or black. 
+* Be sure that victim_age is numeric
+
 ```{r}
 homicide_df = 
   read_csv("data/homicide-data.csv", na = c("", "NA", "Unknown")) %>% 
@@ -51,10 +57,15 @@ homicide_df =
     victim_race %in% c("White", "Black"),
     city_state != "Tulsa, AL") %>% 
   select(city_state, resolution, victim_age, victim_race, victim_sex)
+
+homicide_df
 ```
 
 
 Start with one city.
+
+*For the city of Baltimore, MD, use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors. 
+* Save the output of glm as an R object; apply the broom::tidy to this object; and obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing non-white victims to white victims keeping all other variables fixed.
 
 ```{r}
 baltimore_df =
@@ -75,6 +86,9 @@ glm(resolution ~ victim_age + victim_race + victim_sex,
 
 
 Try this across cities.
+* Now run glm for each of the cities in your dataset, 
+* and extract the adjusted odds ratio (and CI) for solving homicides comparing Black victims to white victims. 
+* Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 
 ```{r}
 models_results_df = 
@@ -95,6 +109,7 @@ models_results_df =
   select(city_state, term, OR, starts_with("CI")) 
 ```
 
+* Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
 ```{r}
 models_results_df %>% 
   filter(term == "victim_sexMale") %>% 
@@ -110,21 +125,90 @@ models_results_df %>%
 ## Problem 2
 
 Find some residuals
+* Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
 ```{r}
 baby_df = 
-  read_csv("./data/birthweight.csv")
+  read_csv("./data/birthweight.csv") %>% 
+  mutate(
+    frace = as.factor(frace),
+    mrace = as.factor(mrace)
+  ) %>% 
+  drop_na()
+
+baby_df
 ```
 
-fit a model
+### fit a model using delwt, bhead, gaweeks, and momage as predictors
+
+* Propose a regression model for birthweight. 
+* This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. 
+* Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
 
 ```{r}
-model_fit = lm(bwt ~ gaweeks, data = baby_df)
+model_fit = lm(bwt ~ delwt + bhead + gaweeks + momage, data = baby_df)
 ```
 
+### making a plot
 ```{r}
 baby_df %>% 
   modelr::add_residuals(model_fit) %>% 
-  ggplot(aes(x = gaweeks, y = resid)) + 
+  modelr::add_predictions(model_fit) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
   geom_point()
 ```
+
+
+####Answer: 
+* The predictors choice and model building are based on previous knowledge of the possible factors that can affect baby birthweight. 
+
+### Compare model_fit to two others:
+
+* One using length at birth and gestational age as predictors (main effects only)
+* One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+* Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+
+```{r}
+#build the two other models
+model_main = lm(bwt ~ blength + gaweeks, data = baby_df)
+model_intrct = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = baby_df)
+
+#compare models
+cv_df = 
+  crossv_mc(baby_df, 100)
+
+cv_df %>% pull(train) %>% .[[1]] %>% as_tibble
+cv_df %>% pull(test) %>% .[[1]] %>% as_tibble
+
+cv_df =
+  cv_df %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+
+cv_df = 
+  cv_df %>% 
+  mutate(
+    model_fit  = map(train, ~lm(bwt ~ delwt + bhead + gaweeks + momage, data = .x)),
+    model_main  = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    model_intrct  = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = .x))) %>% 
+  mutate(
+    rmse_fit = map2_dbl(model_fit, test, ~rmse(model = .x, data = .y)),
+    rmse_main = map2_dbl(model_main, test, ~rmse(model = .x, data = .y)),
+    rmse_intrct = map2_dbl(model_intrct, test, ~rmse(model = .x, data = .y)))
+
+#Compare model by RMSE 
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+
+
+```
+####Answer: 
+* From the plot we can find that the interaction model has the least rmse among the three. 
