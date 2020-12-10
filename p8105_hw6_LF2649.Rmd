@@ -212,3 +212,99 @@ cv_df %>%
 ```
 ####Answer: 
 * From the plot we can find that the interaction model has the least rmse among the three. 
+
+
+## Problem 3
+* For this problem, we’ll use the 2017 Central Park weather data that we’ve seen elsewhere. 
+* The code chunk below (adapted from the course website) will download these data.
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+* We’ll focus on a simple linear regression with tmax as the response and tmin as the predictor, and are interested in the distribution of two quantities estimated from these data:
+* Note: broom::glance() is helpful for extracting r^2 from a fitted regression, and broom::tidy() (with some additional wrangling) should help in computing log(β^0∗β^1)
+
+### fit the log_beta calculation
+```{r}
+log_beta = 
+  weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+   select(term, estimate) %>%
+  mutate(
+    term = str_replace(term,"\\(Intercept\\)","Intercept_beta"),
+    term = str_replace(term,"tmin","tmin_beta"),
+    ) %>%
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate"
+    ) %>% 
+   unnest(Intercept_beta, tmin_beta) %>% 
+   mutate(log = log(Intercept_beta) + log(tmin_beta)) #Since log(β^0∗β^1) = log(beta_0) + log(beta_1)
+  
+log_plot = 
+  log_beta %>% 
+  ggplot(aes(x = log)) + geom_density()
+  
+#95%CI
+log_beta %>% 
+  mutate(
+    ci_lower = quantile(log, 0.025), 
+    ci_upper = quantile(log, 0.975)
+  ) %>% 
+  select(ci_lower, ci_upper) %>% 
+  head(1)
+
+
+
+```
+
+
+### fit the r_2 calculation
+```{r}
+r_2 = 
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  mutate(r_square = r.squared) %>% 
+  select(r_square) 
+
+
+
+r_2_plot = 
+  r_2 %>% 
+  ggplot(aes(x = r_square)) + geom_density()
+  
+
+
+#95%CI
+r_2 %>% 
+  mutate(
+    ci_lower = quantile(r_square, 0.025), 
+    ci_upper = quantile(r_square, 0.975)
+  ) %>% 
+  select(ci_lower, ci_upper) %>% 
+  head(1)
+
+  
+```
+
+
