@@ -272,7 +272,8 @@ log_beta %>%
 
 
 ```
-
+#### Answer: 
+the distrubution of log(β^0∗β^1) is at center of aprroximate 2.0125 with kind of left-skewness. 
 
 ### fit the r_2 calculation
 ```{r}
@@ -306,5 +307,7 @@ r_2 %>%
 
   
 ```
+#### Answer: 
+the distrubution of r^2 is at center of aprroximate 0.915 with kind of left-skewness. 
 
 
